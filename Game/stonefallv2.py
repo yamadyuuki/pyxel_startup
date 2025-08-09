@@ -47,6 +47,8 @@ class App:
         self.is_collision = False
         self.game_over_display_timer = GAME_OVER_DISPLAY_TIME  # ゲームオーバー表示時間
         pyxel.load("my_resource.pyxres")
+        self.jp_font = pyxel.Font("umplus_j10r.bdf")
+        pyxel.playm(0, loop=True)
         self.current_scene = START_SCENE
         pyxel.run(self.update, self.draw)
 
@@ -70,21 +72,17 @@ class App:
             else:
                 self.current_scene = START_SCENE
             return
-
         #プレイヤーの移動
         if pyxel.btn(pyxel.KEY_RIGHT) and self.player_x < SCREEN_WIDTH - 16:
             self.player_x += 1
         elif pyxel.btn(pyxel.KEY_LEFT) and self.player_x > 0:
             self.player_x -= 1
-
         # 石の生成
         if pyxel.frame_count % STONE_INTERVAL == 0:
             self.stones.append(Stone( random.randint(0, SCREEN_WIDTH - 8), 0))
-
         #　石の落下
         for stone in self.stones.copy():
             stone.update()
-
             # 衝突判定
             if (self.player_x <= stone.x <= self.player_x + 8 and
                 self.player_y <= stone.y <= self.player_y +8):
@@ -104,7 +102,7 @@ class App:
 
     def draw_start_scene(self):
         pyxel.blt(0, 0, 0, 32, 0, 160, 120)
-        pyxel.text(SCREEN_WIDTH // 2 - 20, SCREEN_HEIGHT // 2 - 10, "Click to Start", pyxel.COLOR_WHITE)
+        pyxel.text(SCREEN_WIDTH // 2 - 20, SCREEN_HEIGHT // 2 - 10, "クリックしてね♪", pyxel.COLOR_RED, self.jp_font)
         
     
     def draw_play_scene(self):
