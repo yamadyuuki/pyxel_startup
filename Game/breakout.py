@@ -1,33 +1,50 @@
 import pyxel
 
+# ballの設定
+BALL_W = 2
+BALL_H = 2
+BALL_MAX_SPEED = 3.0
+BALL_START_ANGLE = 0.6  # 初速の左右バラつき係数(0.0~1.0)
+
+def clamp(v, lo, hi):
+    return max(lo, min(v, hi))
+
+def rects_intersect(ax, ay, aw, ah, bx, by, bw, bh):
+    return (ax < bx + bw and bx < ax + aw and
+            ay < by + bh and by < ay + ah)
+
 SCREEN_W = 160
 SCREEN_H = 120
 BALL_SPEED = 2
 BALL_SPEED_UP = 0.05
 
-BLOOK_TYPE = [
+BLOCK_TYPE = [
     {"hp": 1, "color": 8},
     {"hp": 2, "color": 10},
     {"hp": 3, "color": 11}
 ]
 
-BLOOK_W = 16
-BLOOK_H = 8
-BLOOK_MARGIN_X = 0
-BLOOK_MARGIN_Y = 2
+BLOCK_W = 16
+BLOCK_H = 8
+BLOCK_MARGIN_X = 0
+BLOCK_MARGIN_Y = 2
 
-BLOCK_COLS = SCREEN_W // BLOOK_W      # 10列（160/16）
+BLOCK_COLS = SCREEN_W // BLOCK_W      # 10列（160/16）
 BLOCK_ROWS = 5                        # 行数は好みで
 BLOCK_TOP = 12
 
 START_SCENE = 0
 PLAY_SCENE = 1
 PAUSE_SCENE = 2
+GAME_OVER_SCENE = 3
 
 # パドルの設定
 PADDLE_W = 24      # 板の幅
 PADDLE_H = 4       # 板の高さ
 PADDLE_SPEED = 3   # 板の移動速度
+
+# ライフポイント
+LIFE_POINTS = 3
 
 class App:
     def __init__(self):
@@ -39,11 +56,85 @@ class App:
 
     def init_game(self):
         self.current_scene = START_SCENE
-
         #パドルの初期化
         self.paddle_x = (SCREEN_W - PADDLE_W) // 2
         self.paddle_y = SCREEN_H - PADDLE_H - 8
+        # ボールの初期化
+        self.ball_reset(attached=True)  # 最初はパドルに乗せておく
+        self.lives = LIFE_POINTS  # ライフポイントの初期化
 
+    # --- ボール初期化 ---
+    def ball_reset(self, attached=False):
+        # パドル中央に配置
+        self.ball_x = self.paddle_x + PADDLE_W / 2 - BALL_W / 2
+        self.ball_y = self.paddle_y - BALL_H - 1
+        # 速度
+        self.vx = BALL_SPEED * (pyxel.rndf(-BALL_START_ANGLE, BALL_START_ANGLE))
+        self.vy = -BALL_SPEED
+        self.vx = clamp(self.vx, -BALL_MAX_SPEED, BALL_MAX_SPEED)
+        self.attached = attached  # Trueの間はパドルに追従（SPACEで発射）
+
+    # --- ボール更新 ---
+    def update_ball(self):
+        # パドルに“乗っている”状態：左右移動に追従、Spaceで発射
+        if self.attached:
+            self.ball_x = self.paddle_x + PADDLE_W / 2 - BALL_W / 2
+            self.ball_y = self.paddle_y - BALL_H - 1
+            if pyxel.btnp(pyxel.KEY_SPACE):  # 発射
+                self.attached = False
+            return
+
+        prev_x, prev_y = self.ball_x, self.ball_y
+
+        # 位置更新
+        self.ball_x += self.vx
+        self.ball_y += self.vy
+
+        # --- 壁反射 ---
+        if self.ball_x <= 0:
+            self.ball_x = 0
+            self.vx *= -1
+        elif self.ball_x + BALL_W >= SCREEN_W:
+            self.ball_x = SCREEN_W - BALL_W
+            self.vx *= -1
+        if self.ball_y <= 0:
+            self.ball_y = 0
+            self.vy *= -1
+
+        # --- 画面下に落ちたら再装填 ---
+        if self.ball_y > SCREEN_H:
+            self.lives -= 1
+            if self.lives <= 0:
+                self.current_scene = GAME_OVER_SCENE # ゲームオーバーシーンへ
+            else:
+                self.ball_reset(attached=True)
+            return
+
+        # --- パドル衝突 ---
+        if rects_intersect(self.ball_x, self.ball_y, BALL_W, BALL_H,
+                           self.paddle_x, self.paddle_y, PADDLE_W, PADDLE_H):
+            # パドルの上面に戻す
+            self.ball_y = self.paddle_y - BALL_H - 1
+            # 縦速度は上向きへ
+            self.vy = -abs(self.vy)
+
+            # 打点によって横速度を調整（中心差分を-1~1に正規化）
+            center = self.paddle_x + PADDLE_W / 2
+            offset = ((self.ball_x + BALL_W / 2) - center) / (PADDLE_W / 2)
+            self.vx = clamp(offset * BALL_MAX_SPEED, -BALL_MAX_SPEED, BALL_MAX_SPEED)
+
+            # ほんの少しスピードアップ（上限あり）
+            speed = (self.vx**2 + self.vy**2) ** 0.5
+            speed = min(speed + BALL_SPEED_UP, BALL_MAX_SPEED * 1.2)
+            # 角度そのままで速度をスケーリング
+            if speed > 0:
+                norm = (self.vx**2 + self.vy**2) ** 0.5 or 1.0
+                self.vx = self.vx / norm * speed
+                self.vy = self.vy / norm * speed
+
+    # --- ボール描画 ---
+    def draw_ball(self):
+        pyxel.rect(int(self.ball_x), int(self.ball_y), BALL_W, BALL_H, pyxel.COLOR_WHITE)
 
     def update(self):
         if pyxel.btnp(pyxel.KEY_ESCAPE):
@@ -62,10 +153,12 @@ class App:
 
     def update_play_scene(self):
         """プレイシーンの更新"""
-        if pyxel.btnp(pyxel.KEY_SPACE):
+        if pyxel.btnp(pyxel.KEY_P):
             self.current_scene = PAUSE_SCENE
         # パドルの更新処理を呼び出し
         self.update_paddle()
+        # ボールの更新処理を呼び出し
+        self.update_ball()
 
     def update_pause_scene(self):
         """ポーズシーンの更新"""
@@ -74,9 +167,9 @@ class App:
 
     # パドルの更新
     def update_paddle(self):
-         if pyxel.btn(pyxel.KEY_RIGHT) and self.paddle_x < SCREEN_W -PADDLE_W - BLOOK_MARGIN_X:
+         if pyxel.btn(pyxel.KEY_RIGHT) and self.paddle_x < SCREEN_W -PADDLE_W - BLOCK_MARGIN_X:
             self.paddle_x += PADDLE_SPEED
-         if pyxel.btn(pyxel.KEY_LEFT) and self.paddle_x > BLOOK_MARGIN_X:
+         if pyxel.btn(pyxel.KEY_LEFT) and self.paddle_x > BLOCK_MARGIN_X:
             self.paddle_x -= PADDLE_SPEED
 
 
@@ -87,6 +180,8 @@ class App:
             self.draw_play_scene()
         elif self.current_scene == PAUSE_SCENE:
             self.draw_pause_scene()
+        elif self.current_scene == GAME_OVER_SCENE:
+            self.draw_game_over_scene()
     
     def draw_start_scene(self): # スタートシーンの描画
         pyxel.cls(pyxel.COLOR_NAVY)
@@ -96,11 +191,16 @@ class App:
     def draw_play_scene(self): # プレイシーンの描画
           pyxel.cls(pyxel.COLOR_CYAN)
           self.draw_paddle()
+          self.draw_ball()
 
     def draw_pause_scene(self): # ポーズシーンの描画
             pyxel.cls(pyxel.COLOR_GRAY)
             pyxel.text(SCREEN_W // 2 - 20, SCREEN_H // 2, "PAUSED", pyxel.COLOR_WHITE)
             pyxel.text(SCREEN_W // 2 - 30, SCREEN_H // 2 + 10, "Press SPACE to continue", pyxel.COLOR_WHITE)
+
+    def draw_game_over_scene(self): # ゲームオーバーシーンの描画
+        pyxel.cls(pyxel.COLOR_RED)
+        pyxel.text(SCREEN_W // 2 - 30, SCREEN_H // 2 - 10, "GAME OVER", pyxel.COLOR_WHITE)
 
     # 板の描画
     def draw_paddle(self):
