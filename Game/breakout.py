@@ -13,21 +13,21 @@ def rects_intersect(ax, ay, aw, ah, bx, by, bw, bh):
     return (ax < bx + bw and bx < ax + aw and
             ay < by + bh and by < ay + ah)
 
-SCREEN_W = 160
-SCREEN_H = 120
+SCREEN_W = 120
+SCREEN_H = 210
 BALL_SPEED = 2
 BALL_SPEED_UP = 0.05
 
 BLOCK_TYPE = [
-    {"hp": 1, "color": 8},
+    {"hp": 3, "color": 8},
     {"hp": 2, "color": 10},
-    {"hp": 3, "color": 11}
+    {"hp": 1, "color": 11}
 ]
 
 BLOCK_W = 16
 BLOCK_H = 8
-BLOCK_MARGIN_X = 0
-BLOCK_MARGIN_Y = 2
+BLOCK_MARGIN_X = 1
+BLOCK_MARGIN_Y = 1
 
 BLOCK_COLS = SCREEN_W // BLOCK_W      # 10列（160/16）
 BLOCK_ROWS = 5                        # 行数は好みで
@@ -48,7 +48,7 @@ LIFE_POINTS = 3
 
 class App:
     def __init__(self):
-        pyxel.init(SCREEN_W, SCREEN_H, title="Breakout Game", fps=30)
+        pyxel.init(SCREEN_W, SCREEN_H, title="Breakout Game", fps=60)
         pyxel.load("my_resource.pyxres") # リソースの読み込み
         self.jp_font = pyxel.Font("umplus_j10r.bdf") # 日本語フォントの読み込み
         self.init_game()
@@ -62,6 +62,7 @@ class App:
         # ボールの初期化
         self.ball_reset(attached=True)  # 最初はパドルに乗せておく
         self.lives = LIFE_POINTS  # ライフポイントの初期化
+        self.blocks = self.build_blocks()  # ブロックの初期化
 
     # --- ボール初期化 ---
     def ball_reset(self, attached=False):
@@ -109,7 +110,9 @@ class App:
             else:
                 self.ball_reset(attached=True)
             return
-
+        # --- ブロック衝突 ---
+        self.check_block_collision(prev_x, prev_y)
+        
         # --- パドル衝突 ---
         if rects_intersect(self.ball_x, self.ball_y, BALL_W, BALL_H,
                            self.paddle_x, self.paddle_y, PADDLE_W, PADDLE_H):
@@ -118,11 +121,12 @@ class App:
             # 縦速度は上向きへ
             self.vy = -abs(self.vy)
 
+            """""
             # 打点によって横速度を調整（中心差分を-1~1に正規化）
             center = self.paddle_x + PADDLE_W / 2
             offset = ((self.ball_x + BALL_W / 2) - center) / (PADDLE_W / 2)
             self.vx = clamp(offset * BALL_MAX_SPEED, -BALL_MAX_SPEED, BALL_MAX_SPEED)
-
+            
             # ほんの少しスピードアップ（上限あり）
             speed = (self.vx**2 + self.vy**2) ** 0.5
             speed = min(speed + BALL_SPEED_UP, BALL_MAX_SPEED * 1.2)
@@ -131,7 +135,7 @@ class App:
                 norm = (self.vx**2 + self.vy**2) ** 0.5 or 1.0
                 self.vx = self.vx / norm * speed
                 self.vy = self.vy / norm * speed
-
+            """
     # --- ボール描画 ---
     def draw_ball(self):
         pyxel.rect(int(self.ball_x), int(self.ball_y), BALL_W, BALL_H, pyxel.COLOR_WHITE)
@@ -190,9 +194,13 @@ class App:
 
     def draw_play_scene(self): # プレイシーンの描画
           pyxel.cls(pyxel.COLOR_CYAN)
+          self.draw_blocks()
           self.draw_paddle()
           self.draw_ball()
 
+    def draw_blocks(self):
+        for b in self.blocks:
+            b.draw()
     def draw_pause_scene(self): # ポーズシーンの描画
             pyxel.cls(pyxel.COLOR_GRAY)
             pyxel.text(SCREEN_W // 2 - 20, SCREEN_H // 2, "PAUSED", pyxel.COLOR_WHITE)
@@ -209,5 +217,87 @@ class App:
         pyxel.rect(self.paddle_x, self.paddle_y, PADDLE_W, PADDLE_H, pyxel.COLOR_WHITE)
         # より見た目を良くしたい場合は、枠線を追加
         pyxel.rectb(self.paddle_x, self.paddle_y, PADDLE_W, PADDLE_H, pyxel.COLOR_GRAY)    
+
+    def build_blocks(self):
+        blocks = []
+        cols = block_cols()
+        for r in range(BLOCK_ROWS):
+            for c in range(cols):
+                x = c * (BLOCK_W + BLOCK_MARGIN_X)
+                y = BLOCK_TOP + r * (BLOCK_H + BLOCK_MARGIN_Y)
+                # 行に応じてブロックの“種類”を選ぶ（行数が多くても範囲内に丸める）
+                kind = min(r, len(BLOCK_TYPE) - 1)
+                blocks.append(Block(x, y, kind))
+        return blocks
+
+    # ブロックの列数を計算
+    def block_cols():
+        return (SCREEN_W + BLOCK_MARGIN_X) // (BLOCK_W + BLOCK_MARGIN_X)
+    
+    def check_block_collision(self, prev_x, prev_y):
+    # ボールとブロックの当たり判定。当たったブロックのhpを減らし、0なら消滅。反射方向は「どこから入ってきたか」で判定。
+        for b in self.blocks:
+            if not b.alive:
+                continue
+
+            if rects_intersect(self.ball_x, self.ball_y, BALL_W, BALL_H,
+                            b.x, b.y, b.w, b.h):
+                # --- 反射方向の判定（前フレーム位置から推定） ---
+                from_top    = prev_y + BALL_H <= b.y and self.ball_y + BALL_H > b.y
+                from_bottom = prev_y >= b.y + b.h and self.ball_y < b.y + b.h
+                from_left   = prev_x + BALL_W <= b.x and self.ball_x + BALL_W > b.x
+                from_right  = prev_x >= b.x + b.w and self.ball_x < b.x + b.w
+
+                if from_top or from_bottom:
+                    self.vy *= -1
+                    # めり込み補正（上/下側へ押し戻す）
+                    if from_top:
+                        self.ball_y = b.y - BALL_H - 0.01
+                    else:
+                        self.ball_y = b.y + b.h + 0.01
+                elif from_left or from_right:
+                    self.vx *= -1
+                    # めり込み補正（左/右側へ押し戻す）
+                    if from_left:
+                        self.ball_x = b.x - BALL_W - 0.01
+                    else:
+                        self.ball_x = b.x + b.w + 0.01
+                else:
+                    # 万一どこから入ったか特定できないときは縦に反射
+                    self.vy *= -1
+
+                # --- ブロック耐久の減少 ---
+                b.hp -= 1
+                if b.hp <= 0:
+                    b.alive = False
+
+                # 1フレームで複数ヒットを防ぐ
+                break
+
+# ブロックの描画
+class Block:
+    def __init__(self, x, y, kind=0):
+        t = BLOCK_TYPE[kind]
+        self.x = x
+        self.y = y
+        self.w = BLOCK_W
+        self.h = BLOCK_H
+        self.hp = t["hp"]
+        self.color = t["color"]
+        self.alive = True
+
+    def draw(self):
+        if not self.alive:
+            return
+        # 本体
+        pyxel.rect(self.x, self.y, self.w, self.h, self.color)
+        # ふち線（見やすさ用・任意）
+        pyxel.rectb(self.x, self.y, self.w, self.h, pyxel.COLOR_WHITE)
+
+
+
+# ブロックの列数を計算
+def block_cols():
+    return (SCREEN_W + BLOCK_MARGIN_X) // (BLOCK_W + BLOCK_MARGIN_X)
 
 App()
