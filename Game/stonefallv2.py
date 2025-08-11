@@ -11,7 +11,7 @@ plus_x = SCREEN_WIDTH * 3 // 4
 number_x = center_x - 6  # 少し左に寄せて中央に見えるように
 text_y = center_y
 STONE_INTERVAL = 7.5  # 石が落ちる間隔 (0.25秒ごとに2つ落ちる)
-GAME_OVER_DISPLAY_TIME = 60 # 60フレーム (2秒) ゲームオーバー表示時間
+GAME_OVER_DISPLAY_TIME = 120 # 60フレーム (2秒) ゲームオーバー表示時間
 START_SCENE = "start"
 PLAY_SCENE = "play"
 
