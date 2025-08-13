@@ -29,7 +29,6 @@ class App:
         pyxel.text(number_x, text_y, f"{self.number}", pyxel.COLOR_WHITE)
         pyxel.text(minus_x, text_y, "-", pyxel.COLOR_WHITE)
         pyxel.text(plus_x, text_y, "+", pyxel.COLOR_WHITE)
-
-
+        #
 
 App()  # Create an instance of the App class to run the game
