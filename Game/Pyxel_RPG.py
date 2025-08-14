@@ -19,7 +19,7 @@ H = 256
 # プレイヤーサイズ
 PW = 16
 PH = 16
-SPEED = 0.5
+SPEED = 10
 
 # マップ設定
 MAP_W, MAP_H = 512, 512
@@ -75,14 +75,51 @@ def rect_hits_block(x, y, w, h):
     )
 
 def rect_move(x, y, w, h, dx, dy):
-    """矩形をdx, dyだけ移動し、ブロックに衝突しないように調整"""
-    nx = clamp(x + dx, 0, MAP_W - w)
-    if not rect_hits_block(nx, y, w, h):
-        x = nx
-    # --- Y軸 ---
-    ny = clamp(y + dy, 0, MAP_H - h)
-    if not rect_hits_block(x, ny, w, h):
-        y = ny
+    """
+    連続衝突検出（push-back）版の移動。
+    まずY軸方向に1pxずつ進め、衝突したら止める。
+    次にX軸方向も同様に進める。
+    """
+    # --- Y軸を先に処理 ---
+    x, y = _move_axis_pushback(x, y, w, h, dy, axis='y')
+    # --- X軸を次に処理 ---
+    x, y = _move_axis_pushback(x, y, w, h, dx, axis='x')
+    return x, y
+
+
+def _move_axis_pushback(x, y, w, h, delta, axis):
+    """
+    axis: 'x' or 'y'
+    delta: 目標移動量（正負のfloat）
+    1pxずつ進め、ブロックに当たったらそこで止める
+    """
+    if delta == 0:
+        return x, y
+
+    # 何pxぶん進めるか（小数でも天井切り上げで確実に回数を回す）
+    steps = pyxel.ceil(abs(delta))
+    # 1ステップの符号（+1 or -1）
+    step = 1 if delta > 0 else -1
+
+    for _ in range(steps):
+        nx, ny = x, y
+        if axis == 'x':
+            nx = x + step
+        else:
+            ny = y + step
+
+        # マップ外に出ないようクランプ
+        nx = clamp(nx, 0, MAP_W - w)
+        ny = clamp(ny, 0, MAP_H - h)
+
+        # 次の位置で衝突するか？
+        if rect_hits_block(nx, ny, w, h):
+            # ここでストップ（これ以上は進めない）
+            break
+
+        # 衝突しなければ1px進める
+        x, y = nx, ny
+
     return x, y
 
 
@@ -138,7 +175,7 @@ class Player(GameObject):
                     # 宝石を収集（タイルを空に設定）
                     set_tile_empty(check_x, check_y)
                     self.gems_collected += 1
-                    pyxel.play(0, 2)  # 効果音再生（チャンネル0、サウンド0）
+                    pyxel.play(0,2)  # 効果音再生（チャンネル0、サウンド0）
 
     def draw_player(self):
         if self.facing:
@@ -176,43 +213,54 @@ class App:
         self.scene[self.scene_name].update()
 
     def update(self):
-        if self.scene_name == "title":
-            self.scene["title"].update()   
+        
         if pyxel.btnp(pyxel.KEY_ESCAPE):
             pyxel.quit()
         
-        # デバッグモード切り替え
-        if pyxel.btnp(pyxel.KEY_D):
-            self.debug_mode = not self.debug_mode
-        elif self.scene_name == "play":    
-            # リセットボタン（Rキー）
-            if pyxel.btnp(pyxel.KEY_R):
-                self.reset_game()
-                return  # リセット後は他の処理をスキップ
-            
-            if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
-                mouse_x = pyxel.mouse_x
-                mouse_y = pyxel.mouse_y
-            
-                # リセットボタンの範囲内をクリックしたかチェック
-                if (RESET_BTN_X <= mouse_x <= RESET_BTN_X + RESET_BTN_W and
-                    RESET_BTN_Y <= mouse_y <= RESET_BTN_Y + RESET_BTN_H):
+        if pyxel.btnp(pyxel.KEY_T):
+            if self.scene_name == "play":
+                self.scene_name = "title"
+                self.scene["title"].alpha = 0.0
+            elif self.scene_name == "title":
+                self.scene_name = "play"
+            return
+
+        # 各シーン固有の更新処理
+        if self.scene_name == "title":
+            self.scene["title"].update()
+        elif self.scene_name == "play": 
+            # デバッグモード切り替え
+            if pyxel.btnp(pyxel.KEY_D):
+                self.debug_mode = not self.debug_mode
+            elif self.scene_name == "play":    
+                # リセットボタン（Rキー）
+                if pyxel.btnp(pyxel.KEY_R):
                     self.reset_game()
                     return  # リセット後は他の処理をスキップ
-        
-            self.player.update()
+                
+                if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
+                    mouse_x = pyxel.mouse_x
+                    mouse_y = pyxel.mouse_y
+                
+                    # リセットボタンの範囲内をクリックしたかチェック
+                    if (RESET_BTN_X <= mouse_x <= RESET_BTN_X + RESET_BTN_W and
+                        RESET_BTN_Y <= mouse_y <= RESET_BTN_Y + RESET_BTN_H):
+                        self.reset_game()
+                        return  # リセット後は他の処理をスキップ
+            
+                self.player.update()
 
-            # X方向カメラ追従
-            if self.player.x > self.cam_x + W - SCROLL_BORDER_X:
-                self.cam_x = min(self.player.x - (W - SCROLL_BORDER_X), MAP_W - W)
-            elif self.player.x < self.cam_x + SCROLL_BORDER_X:
-                self.cam_x = max(self.player.x - SCROLL_BORDER_X, 0)
+                # X方向カメラ追従
+                if self.player.x > self.cam_x + W - SCROLL_BORDER_X:
+                    self.cam_x = min(self.player.x - (W - SCROLL_BORDER_X), MAP_W - W)
+                elif self.player.x < self.cam_x + SCROLL_BORDER_X:
+                    self.cam_x = max(self.player.x - SCROLL_BORDER_X, 0)
 
-            # Y方向カメラ追従
-            if self.player.y > self.cam_y + H - SCROLL_BORDER_Y:
-                self.cam_y = min(self.player.y - (H - SCROLL_BORDER_Y), MAP_H - H)
-            elif self.player.y < self.cam_y + SCROLL_BORDER_Y:
-                self.cam_y = max(self.player.y - SCROLL_BORDER_Y, 0)
+                # Y方向カメラ追従
+                if self.player.y > self.cam_y + H - SCROLL_BORDER_Y:
+                    self.cam_y = min(self.player.y - (H - SCROLL_BORDER_Y), MAP_H - H)
+                elif self.player.y < self.cam_y + SCROLL_BORDER_Y:
+                    self.cam_y = max(self.player.y - SCROLL_BORDER_Y, 0)
 
     def draw(self):
         if self.scene_name == "title":
