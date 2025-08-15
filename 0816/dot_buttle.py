@@ -16,6 +16,7 @@ PLAYER_HEIGHT    = 16
 # タイルセット上のUV(= pgetで返る(u,v)) → ゲーム内のタイルタイプ への対応表
 TILE_TO_TILETYPE = {
     (2, 2): TILE_STONE,   # 例：タイルUV(2,2)は「壁（石）」扱い
+    (3, 2): TILE_STONE,   # 追加のタイル定義
 }
 
 def get_tile_type(x, y):
@@ -134,152 +135,116 @@ class Enemy:
 # ===== 剣クラス =====
 class Sword:
     def __init__(self):
-        # 剣のスプライト情報（修正済み）
+        # 剣のスプライト情報
         self.u = 16  # スプライトのX座標
         self.v = 24  # スプライトのY座標
         self.w = 16  # スプライトの幅
         self.h = 8   # スプライトの高さ
         
-        # 剣の回転アニメーション用
+        # 剣の状態
         self.active = False
-        self.angle = 0
-        self.max_angle = 180  # 180度回転
-        self.rotation_speed = 10  # 1フレームの回転角度
-        self.center_x = 0
-        self.center_y = 0
-        self.radius = 20  # 回転半径
-        self.facing_right = False
-        
-        # 当たり判定用
-        self.hit_enemies = set()  # 既に当たった敵を記録
-    
-    def activate(self, center_x, center_y, facing_right):
-        """剣の回転アニメーションを開始"""
+        self.duration = 0
+        self.max_duration = 20  # 攻撃の時間を設定
+
+        # 剣の位置
+        self.x = 0
+        self.y = 0
+        self.offset_x = 0
+        self.offset_y = 0
+        self.facing_right = True
+
+        # 当たり判定
+        self.hit_enemies = set()
+        self.check_points = []
+
+    def activate(self, player_x, player_y, player_w, player_h, facing_right):
+        """剣を前方に出す"""
         self.active = True
-        self.angle = 0
-        self.center_x = center_x
-        self.center_y = center_y
+        self.duration = self.max_duration
         self.facing_right = facing_right
-        self.hit_enemies.clear()  # 当たり判定をリセット
-    
-    def update(self, enemies):
-        """剣の更新と当たり判定"""
+        self.hit_enemies.clear()
+
+        # プレイヤーの向きに応じて剣のオフセットを設定
+        if facing_right:
+            self.offset_x = -self.w  # 左側
+        else:
+            self.offset_x = player_w  # 右側
+
+        # Y方向のオフセットを設定
+        self.offset_y = (player_h - self.h) // 2
+
+        # 初期位置を更新
+        self.x = player_x + self.offset_x
+        self.y = player_y + self.offset_y
+
+        # 当たり判定用のチェックポイントを生成
+        self._generate_check_points()
+
+    def _generate_check_points(self):
+        """攻撃の当たり判定用チェックポイントを生成"""
+        self.check_points = []
+        
+        # 剣のサイズに基づいて複数のチェックポイントを生成
+        num_points = 5  # チェックポイントの数
+        
+        for i in range(num_points):
+            # X方向に均等に配置
+            x_ratio = i / (num_points - 1)
+            point_x = self.x + int(self.w * x_ratio)
+            
+            # Y方向は上下複数点
+            for y_offset in [0, self.h // 2, self.h - 1]:
+                point_y = self.y + y_offset
+                self.check_points.append((point_x, point_y))
+
+    def update(self, player_x, player_y, enemies):
+        """剣の更新"""
         if not self.active:
             return
-            
-        # 角度の更新
-        self.angle += self.rotation_speed
-        if self.angle >= self.max_angle:
+
+        self.duration -= 1
+        if self.duration <= 0:
             self.active = False
             return
+
+        # プレイヤーの位置に追従して剣の位置を更新
+        self.x = player_x + self.offset_x
+        self.y = player_y + self.offset_y
+
+        # チェックポイントも更新
+        self._generate_check_points()
         
-        # 当たり判定
-        self.check_hits(enemies)
-    
-    def check_hits(self, enemies):
-        """敵との当たり判定"""
-        if not self.active:
-            return
-            
-        # 剣の現在位置を計算
-        angle_rad = math.radians(self.angle)
-        if self.facing_right:
-            angle_rad = math.pi - angle_rad
-        
-        # 剣の中心位置
-        sword_x = self.center_x + math.cos(angle_rad) * self.radius
-        sword_y = self.center_y - math.sin(angle_rad) * self.radius
-        
-        # 当たり判定サイズ（剣のスプライトサイズに基づく）
-        hit_w = self.w
-        hit_h = self.h
-        
+        # 連続衝突検出方式の当たり判定
+        self._check_continuous_hits(enemies)
+
+    def _check_continuous_hits(self, enemies):
+        """連続衝突検出方式の当たり判定"""
         for enemy in enemies:
             if not enemy.active or enemy in self.hit_enemies:
                 continue
-                
-            # 簡易的な当たり判定（矩形）
-            if (sword_x < enemy.x + enemy.w and
-                sword_x + hit_w > enemy.x and
-                sword_y < enemy.y + enemy.h and
-                sword_y + hit_h > enemy.y):
-                
-                enemy.hit()
-                self.hit_enemies.add(enemy)  # 同じ攻撃で複数回ヒットしないように記録
-    
+            
+            # 連続的なチェックポイントで当たり判定
+            for point_x, point_y in self.check_points:
+                if (point_x >= enemy.x and point_x < enemy.x + enemy.w and
+                    point_y >= enemy.y and point_y < enemy.y + enemy.h):
+                    
+                    # 衝突検出
+                    enemy.hit()
+                    self.hit_enemies.add(enemy)
+                    break  # この敵との判定は終了
+
     def draw(self):
-        """剣の描画"""
         if not self.active:
             return
-            
-        # 角度に応じた位置計算（向きに応じて調整）
-        angle_rad = math.radians(self.angle)
-        if self.facing_right:
-            angle_rad = math.pi - angle_rad
         
-        # 剣の中心位置
-        sword_x = self.center_x + math.cos(angle_rad) * self.radius
-        sword_y = self.center_y - math.sin(angle_rad) * self.radius
+        w = -self.w if self.facing_right else self.w
+
+        # 剣の描画
+        pyxel.blt(self.x, self.y, 0, self.u, self.v, w, self.h, 0)
         
-        # 角度を描画向きに変換（180度の半円を8方向に分割）
-        # 柄を内側にするために剣の向きを調整
-        normalized_angle = (self.angle % 360)
-        
-        # 角度を8方向（45度ごと）に量子化
-        angle_bracket = int((normalized_angle + 22.5) / 45) % 8
-        
-        # 剣を描画（向きに応じて反転）
-        # 柄が内側に来るように調整
-        flip_x = False
-        
-        if self.facing_right:  # 左向き（プレイヤーが右を向いている）
-            if angle_bracket in [0, 1]:  # 右上方向
-                flip_x = True
-                offset_x = -self.w
-                offset_y = -self.h
-            elif angle_bracket in [2, 3]:  # 左上方向
-                flip_x = False
-                offset_x = 0
-                offset_y = -self.h
-            elif angle_bracket == 4:  # 左方向
-                flip_x = False
-                offset_x = 0
-                offset_y = -self.h // 2
-            else:  # 左下・下方向
-                flip_x = False
-                offset_x = 0
-                offset_y = 0
-        else:  # 右向き（プレイヤーが左を向いている）
-            if angle_bracket in [0, 1]:  # 左上方向
-                flip_x = False
-                offset_x = 0
-                offset_y = -self.h
-            elif angle_bracket in [2, 3]:  # 右上方向
-                flip_x = True
-                offset_x = -self.w
-                offset_y = -self.h
-            elif angle_bracket == 4:  # 右方向
-                flip_x = True
-                offset_x = -self.w
-                offset_y = -self.h // 2
-            else:  # 右下・下方向
-                flip_x = True
-                offset_x = -self.w
-                offset_y = 0
-        
-        # 描画（柄が内側に来るように反転）
-        w = -self.w if flip_x else self.w
-        
-        pyxel.blt(
-            int(sword_x + offset_x),
-            int(sword_y + offset_y),
-            0,  # イメージバンク
-            self.u,
-            self.v,
-            w,
-            self.h,
-            0  # 透明色
-        )
+        # デバッグ: チェックポイントを表示（必要に応じてコメントアウト）
+        # for px, py in self.check_points:
+        #     pyxel.pset(px, py, 8)  # 赤色で表示
 
 # ===== プレイヤー =====
 class Player:
@@ -296,7 +261,7 @@ class Player:
         self.move_speed = 1.2
         self.gravity = 0.35
         self.max_fall = 5.0
-        self.jump_power = -5.5
+        self.jump_power = -6
 
         self.on_ground = False
         self.facing_right = False
@@ -315,23 +280,18 @@ class Player:
             self.vx += self.move_speed
             self.facing_right = False
 
-        # ジャンプ
-        if self.on_ground and pyxel.btnp(pyxel.KEY_SPACE):
+        # ジャンプ（UPキーに統一）
+        if self.on_ground and pyxel.btnp(pyxel.KEY_UP):
             self.vy = self.jump_power
 
         # 攻撃（Aキー）
         if self.attack_cooldown > 0:
             self.attack_cooldown -= 1
             
-        if pyxel.btnp(pyxel.KEY_A) and self.attack_cooldown == 0 and not self.sword.active:
-            # 剣の回転攻撃を開始
-            center_x = self.x + self.w // 2
-            center_y = self.y + self.h // 2
-            self.sword.activate(center_x, center_y, self.facing_right)
-            self.attack_cooldown = 30  # 攻撃のクールダウン
-        
-        # 剣の更新
-        self.sword.update(enemies)
+        if pyxel.btnp(pyxel.KEY_SPACE) and self.attack_cooldown == 0 and not self.sword.active:
+            # 剣の攻撃
+            self.sword.activate(self.x, self.y, self.w, self.h, self.facing_right)
+            self.attack_cooldown = 30
 
         # 重力
         self.vy = min(self.vy + self.gravity, self.max_fall)
@@ -351,7 +311,10 @@ class Player:
         if (hit_left and self.vx < 0) or (hit_right and self.vx > 0):
             self.vx = 0
 
-        # 画面外落下などの簡易リセット（任意）
+        # 剣の更新（プレイヤーの現在位置を渡す）
+        self.sword.update(self.x, self.y, enemies)
+        
+        # 画面外落下などの簡易リセット
         if self.y > pyxel.height + 32:
             self.respawn()
 
