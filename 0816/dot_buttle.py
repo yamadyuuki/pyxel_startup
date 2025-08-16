@@ -393,6 +393,6 @@ class App:
         self.player.draw()
         
         # 操作説明
-        pyxel.text(5, 5, "A: Attack  R: Reset  SPACE: Jump", 7)
+        pyxel.text(5, 5, "SPACE: Attack  R: Reset  ", 7)
 
 App()
