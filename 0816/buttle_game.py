@@ -3,7 +3,7 @@ import math
 import random
 from buttle_constants import (
     SCREEN_W, SCREEN_H, FPS,
-    TILE_SIZE, TILE_TO_TILETYPE, BLOCKING_TYPES,TILE_NONE,
+    TILE_SIZE, TILE_TO_TILETYPE, BLOCKING_TYPES, TILE_NONE,
     PLAYER_RESPAWN_X, PLAYER_RESPAWN_Y, PLAYER_W, PLAYER_H,
     GRAVITY, MAX_FALL, MOVE_SPEED, JUMP_POWER,
     KEY_LEFT, KEY_RIGHT, KEY_JUMP, KEY_ATTACK, KEY_RESET, KEY_QUIT, KEY_RETRY,
@@ -15,14 +15,25 @@ from buttle_constants import (
     GAME_STATE_PLAYING, GAME_STATE_GAME_OVER,
     GAMEOVER_TILEMAP, GAMEOVER_IMAGE, GAMEOVER_TILE_X, GAMEOVER_TILE_Y,
     GAMEOVER_TILE_W, GAMEOVER_TILE_H,
-    # 敵関連の定数（新規追加）
-    ENEMY_W, ENEMY_H, ENEMY_HP, ENEMY_HURT_FRAMES,
-    ENEMY_GRAVITY, ENEMY_MAX_FALL, ENEMY_MOVE_SPEED, ENEMY_SPAWN_HEIGHT,
-    ENEMY_STATE_FALLING, ENEMY_STATE_GROUND, ENEMY_DIRECTION_LEFT, ENEMY_DIRECTION_RIGHT,
+    # スコア関連
     SCORE_ENEMY_DEFEAT,
+    # ウェーブ表示関連
+    WAVE_NOTIFICATION_COLOR,
+    # 銃関連
+    GUN_COOLDOWN
 )
 
+# 敵とスポーンコントローラをインポート
+from buttle_enemy import Enemy
+from buttle_spawn import SpawnController
+from buttle_gun import Gun
 
+from buttle_constants import (
+    # ... 既存のインポート ...
+    KEY_LEFT, KEY_RIGHT, KEY_JUMP, KEY_ATTACK, KEY_RESET, KEY_QUIT, KEY_RETRY,
+    KEY_GUN,  # 追加: 銃の発射キー
+    # ... 他のインポートは変更なし ...
+)
 
 def get_tile_type(x, y):
     """ワールド座標(x,y)にあるタイルタイプを返す"""
@@ -100,137 +111,7 @@ def move_x_with_pushback(x, y, dx, w, h):
         x += frac
     return x, hit_left, hit_right, dx
 
-# ===== 敵クラス（基本挙動実装） =====
-class Enemy:
-    def __init__(self, x, y):
-        # 位置とサイズ
-        self.x = x
-        self.y = y
-        self.w = ENEMY_H
-        self.h = ENEMY_W
-        
-        # HP関連
-        self.hp = ENEMY_HP
-        self.max_hp = ENEMY_HP
-        self.hurt_timer = 0
-        self.active = True
-        
-        # 物理パラメータ
-        self.vx = 0
-        self.vy = 0
-        self.gravity = ENEMY_GRAVITY
-        self.max_fall = ENEMY_MAX_FALL
-        self.move_speed = ENEMY_MOVE_SPEED
-        
-        # 行動状態
-        self.state = ENEMY_STATE_FALLING  # 初期状態は落下
-        self.direction = random.choice([ENEMY_DIRECTION_LEFT, ENEMY_DIRECTION_RIGHT])  # ランダムな方向
-        self.on_ground = False
-        
-        # 移動パターン用
-        self.direction_timer = random.randint(60, 180)  # 方向転換タイマー（1-3秒）
-    
-    @classmethod
-    def spawn_from_sky(cls, x):
-        """画面上から落下する敵を生成"""
-        return cls(x, ENEMY_SPAWN_HEIGHT)
-    
-    def hit(self):
-        """ダメージを受ける"""
-        if self.hurt_timer <= 0:
-            self.hp -= 1
-            self.hurt_timer = ENEMY_HURT_FRAMES
-            if self.hp <= 0:
-                self.active = False
-                return True  # 撃破された
-        return False  # 生存中
-        
-    def update(self):
-        """敵の更新処理"""
-        if not self.active:
-            return
-            
-        # 無敵時間の更新
-        if self.hurt_timer > 0:
-            self.hurt_timer -= 1
-        
-        # 現在地面にいるかチェック
-        _, _, on_ground, _ = move_y_with_pushback(self.x, self.y, 1, self.w, self.h)
-        self.on_ground = on_ground
-        
-        # 状態更新（地面検出に基づく）
-        if on_ground and self.state == ENEMY_STATE_FALLING:
-            self.state = ENEMY_STATE_GROUND  # 着地したら地面移動状態に
-            self.vy = 0
-        
-        # 地面にいない場合のみ重力適用
-        if not on_ground:
-            self.vy = min(self.vy + self.gravity, self.max_fall)
-        else:
-            self.vy = 0  # 地面にいる場合は落下速度0
-        
-        # 地面にいる場合は方向に基づいて移動
-        if self.state == ENEMY_STATE_GROUND:
-            self.vx = self.direction * self.move_speed
-            
-            # 方向転換タイマーの更新
-            self.direction_timer -= 1
-            if self.direction_timer <= 0:
-                # 方向を反転
-                self.direction = ENEMY_DIRECTION_LEFT if self.direction == ENEMY_DIRECTION_RIGHT else ENEMY_DIRECTION_RIGHT
-                # タイマーをリセット
-                self.direction_timer = random.randint(60, 180)
-        else:
-            self.vx = 0  # 落下中は横移動しない
-        
-        # Y軸移動（落下）
-        new_y, hit_top, hit_bottom, remaining_dy = move_y_with_pushback(self.x, self.y, self.vy, self.w, self.h)
-        self.y = new_y
-        
-        # X軸移動（地面にいる場合）
-        if self.state == ENEMY_STATE_GROUND:
-            new_x, hit_left, hit_right, _ = move_x_with_pushback(self.x, self.y, self.vx, self.w, self.h)
-            self.x = new_x
-            
-            # 壁に当たったら方向転換
-            if hit_left or hit_right:
-                self.direction = -self.direction
-        
-        # 画面外に落ちたら非アクティブ化
-        if self.y > SCREEN_H + 32:
-            self.active = False
-    
-    def get_center(self):
-        """敵の中心座標を取得"""
-        return (self.x + self.w // 2, self.y + self.h // 2)
-    
-    def draw(self):
-        """敵の描画"""
-        if not self.active:
-            return
-        
-        # 敵のスプライト描画（image0の4,2から1×1タイル分）
-        sprite_u = 4 * TILE_SIZE  # 4タイル目 = 32px
-        sprite_v = 2 * TILE_SIZE  # 2タイル目 = 16px
-        sprite_w = TILE_SIZE      # 1タイル分 = 8px
-        sprite_h = TILE_SIZE      # 1タイル分 = 8px
-        
-        # ダメージ時は点滅（色調変更で対応）
-        color_key = 0 if self.hurt_timer % 4 < 2 else None
-        
-        pyxel.blt(
-            self.x, self.y,     # 描画位置
-            0,                  # image0を使用
-            sprite_u, sprite_v, # スプライト座標
-            sprite_w, sprite_h, # スプライトサイズ
-            color_key           # 透明色（点滅用）
-        )
-        
-        # HPバー（HP満タンでない場合のみ表示）
-        if self.hp < self.max_hp:
-            bar_width = (self.w * self.hp) // self.max_hp
-            pyxel.rect(self.x, self.y - 6, self.w, 2, 5)  # 背景（灰色）
-            pyxel.rect(self.x, self.y - 6, bar_width, 2, 11)  # HP（緑色）
+
 
 # ===== 剣クラス =====
 class Sword:
@@ -266,9 +147,9 @@ class Sword:
 
         # プレイヤーの向きに応じて剣のオフセットを設定
         if facing_right:
-            self.offset_x = -self.w  # 左側
+            self.offset_x = player_w  # 左側
         else:
-            self.offset_x = player_w  # 右側
+            self.offset_x = -self.w  # 右側
 
         # Y方向のオフセットを設定
         self.offset_y = (player_h - self.h) // 2
@@ -345,7 +226,7 @@ class Sword:
         if not self.active:
             return
         
-        w = -self.w if self.facing_right else self.w
+        w = self.w if self.facing_right else -self.w
 
         # 剣の描画
         pyxel.blt(self.x, self.y, 0, self.u, self.v, w, self.h, 0)
@@ -381,6 +262,14 @@ class Player:
         # 攻撃関連
         self.sword = Sword()
         self.attack_cooldown = 0
+    
+            # 銃関連（追加）
+        self.gun = Gun()
+        self.gun_cooldown = 0
+
+        #　銃の発射
+        if self.gun_cooldown >0:
+            self.gun_cooldown -= 1
 
     def take_damage(self, amount, source_x=None, source_y=None):
         """ダメージを受ける統一インターフェース"""
@@ -429,10 +318,10 @@ class Player:
         self.vx = 0
         if pyxel.btn(KEY_LEFT):
             self.vx -= self.move_speed
-            self.facing_right = True
+            self.facing_right = False
         if pyxel.btn(KEY_RIGHT):
             self.vx += self.move_speed
-            self.facing_right = False
+            self.facing_right = True
 
         # ノックバック効果を速度に加算
         self.vx += self.knockback_vx
@@ -452,6 +341,13 @@ class Player:
         if pyxel.btnp(KEY_ATTACK) and self.attack_cooldown == 0 and not self.sword.active:
             self.sword.activate(self.x, self.y, self.w, self.h, self.facing_right)
             self.attack_cooldown = SWORD_COOLDOWN
+
+        #銃の発射
+        if self.gun_cooldown > 0:
+            self.gun_cooldown -= 1
+        if pyxel.btn(KEY_GUN) and self.gun_cooldown == 0:
+            self.gun.activate(self.x, self.y, self.w, self.h, self.facing_right)
+            self.gun_cooldown = GUN_COOLDOWN
 
         # 重力
         self.vy = min(self.vy + self.gravity, self.max_fall)
@@ -495,7 +391,12 @@ class Player:
         defeated_enemies = self.sword.update(self.x, self.y, enemies)
         if defeated_enemies:
             score_gained += len(defeated_enemies) * SCORE_ENEMY_DEFEAT
-        
+
+        # 銃の更新（追加）
+        gun_defeated_enemies = self.gun.update(self.x, self.y, enemies)
+        if gun_defeated_enemies:
+            score_gained += len(gun_defeated_enemies) * SCORE_ENEMY_DEFEAT
+
         # 敵との接触判定（無敵時間でなければダメージ）
         self.check_enemy_collision(enemies)
         
@@ -538,12 +439,15 @@ class Player:
             # プレイヤーの描画
             u, v, w, h = 0, 16, 16, 16
             if self.facing_right:
-                pyxel.blt(self.x, self.y, 0, u, v, w, h, 0)
-            else:
                 pyxel.blt(self.x, self.y, 0, u, v, -w, h, 0)
+            else:
+                pyxel.blt(self.x, self.y, 0, u, v, w, h, 0)
         
         # 剣の描画
         self.sword.draw()
+
+        #　銃の描画
+        self.gun.draw()
         
         # 攻撃クールダウン表示
         if self.attack_cooldown > 0:
@@ -569,17 +473,14 @@ class App:
     
     def init_game(self):
         """ゲームの初期化（新規ゲーム・リトライ両方で使用）"""
+        # プレイヤーの初期化
         self.player = Player(PLAYER_RESPAWN_X, PLAYER_RESPAWN_Y)
         
-        # 敵の初期配置（デモ用 - 後でスポーンシステムに置き換え予定）
-        self.initial_enemies = [
-            (150, ENEMY_SPAWN_HEIGHT),  # 画面上から落下
-            (100, ENEMY_SPAWN_HEIGHT),
-            (200, ENEMY_SPAWN_HEIGHT)
-        ]
+        # 敵リストを空で初期化
+        self.enemies = []
         
-        # 敵を生成
-        self.enemies = self.create_enemies()
+        # スポーンコントローラの初期化
+        self.spawn_controller = SpawnController()
         
         # スコアリセット
         self.score = 0
@@ -587,10 +488,6 @@ class App:
         # ゲーム状態をプレイ中に設定
         self.game_state = GAME_STATE_PLAYING
     
-    def create_enemies(self):
-        """敵を初期配置に基づいて生成"""
-        return [Enemy.spawn_from_sky(x) for x, y in self.initial_enemies]
-
     def update(self):
         # 共通の終了処理
         if pyxel.btnp(KEY_QUIT):
@@ -603,14 +500,28 @@ class App:
 
     def update_playing(self):
         """プレイ中の更新処理"""
+        # スポーンコントローラの更新（新規追加）
+        spawn_enemy, enemy_type, wave_advanced, bonus_score = self.spawn_controller.update()
+        
+        # 敵をスポーンする必要がある場合（新規追加）
+        if spawn_enemy:
+            new_enemy = self.spawn_controller.create_enemy(enemy_type)
+            # 衝突関数を敵に渡す
+            new_enemy.collision_functions = (move_y_with_pushback, move_x_with_pushback, is_block_at)
+            self.enemies.append(new_enemy)
+        
+        # ウェーブクリアボーナスの加算
+        if wave_advanced:
+            self.score += bonus_score
+        
         # 敵の更新
         for enemy in self.enemies:
-            enemy.update()
+            enemy.update(self.player.x, self.player.y)
         
         # 非アクティブな敵を削除
         self.enemies = [enemy for enemy in self.enemies if enemy.active]
         
-        # プレイヤーの更新（獲得スコアを取得）
+        # プレイヤーの更新（得点スコアを取得）
         score_gained = self.player.update(self.enemies)
         self.score += score_gained
         
@@ -652,6 +563,43 @@ class App:
         self.draw_help()
         self.draw_hp_bar()
         self.draw_score()
+        self.draw_wave()
+        # ウェーブ通知描画
+        if self.spawn_controller.should_show_notification():
+            self.draw_wave_notification()
+
+    def draw_wave(self):
+        """ウェーブ表示"""
+        x, y = HUD_POS["WAVE"]
+        wave_info = self.spawn_controller.get_wave_info()
+        
+        # ウェーブ番号の表示
+        pyxel.text(x, y, f"WAVE: {wave_info['wave']}/{wave_info['max_wave']}", 7)
+    
+    def draw_wave_notification(self):
+        """ウェーブ開始通知"""
+        wave_info = self.spawn_controller.get_wave_info()
+        
+        # 画面中央に大きく表示
+        wave_text = f"WAVE {wave_info['wave']}"
+        text_width = len(wave_text) * 4
+        
+        x = (SCREEN_W - text_width) // 2
+        y = SCREEN_H // 3
+        
+        # テキストの背景（半透明効果）
+        pyxel.rect(x - 10, y - 5, text_width + 20, 15, 0)
+        
+        # ウェーブ番号表示
+        pyxel.text(x, y, wave_text, WAVE_NOTIFICATION_COLOR)
+        
+        # 敵が強くなった場合は注意書きを表示
+        if wave_info["enemies_stronger"]:
+            caution_text = "ENEMIES GETTING STRONGER!"
+            caution_width = len(caution_text) * 4
+            caution_x = (SCREEN_W - caution_width) // 2
+            
+            pyxel.text(caution_x, y + 10, caution_text, 8)  # 赤色で警告
 
     def draw_game_over(self):
         """ゲームオーバー画面の描画処理"""
@@ -724,4 +672,5 @@ class App:
         x, y = HUD_POS["SCORE"]
         pyxel.text(x, y, f"Score: {self.score}", 7)
 
-App()
+if __name__ == "__main__":
+    App()

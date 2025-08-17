@@ -35,6 +35,7 @@ KEY_LABELS = {
     "ATK":  "SPACE",
     "RST":  "R",
     "QUIT": "Q",
+    "GUN" : "G",
     "RETRY": "SPACE",
 }
 
@@ -76,7 +77,7 @@ ENEMY_HURT_FRAMES = 20    # 敵の無敵時間
 # 敵の物理パラメータ（新規追加）
 ENEMY_GRAVITY = 0.35      # 敵の重力（プレイヤーと同じ）
 ENEMY_MAX_FALL = 5.0      # 敵の最大落下速度
-ENEMY_MOVE_SPEED = 0.8    # 敵の左右移動速度
+ENEMY_MOVE_SPEED = 0.6    # 敵の左右移動速度
 ENEMY_SPAWN_HEIGHT = -32  # 敵の初期スポーン高さ（画面上）
 
 # 敵の行動パターン（新規追加）
@@ -98,3 +99,68 @@ TILE_TO_TILETYPE = {
     (2, 2): TILE_STONE,
     (3, 2): TILE_STONE,
 }
+
+# 敵のAI関連（新規追加）
+ENEMY_DETECTION_RANGE = 80    # プレイヤー感知範囲（ピクセル）
+ENEMY_ALERT_SPEED_MULTIPLIER = 1.5  # 警戒時の速度倍率
+
+# buttle_constants.py に追加する定数
+
+# スポーン関連の定数
+SPAWN_INITIAL_DELAY = 180       # ゲーム開始からの初期待機時間（フレーム）
+SPAWN_BASE_INTERVAL = 300       # 基本スポーン間隔（フレーム）
+SPAWN_MIN_INTERVAL = 180         # 最小スポーン間隔（フレーム）
+# スポーン可能な(x, y)座標リスト（修正版）
+SPAWN_POSITIONS = [
+    (24, 24),      # 左上
+    (242, 24),     # 右上
+    (24, 128),     # 左中
+    (242, 128),    # 右中
+    (24, 192),     # 左下
+    (242, 192),    # 右下
+    (128, 152),    # 中央下
+]
+
+# ウェーブ関連の定数
+WAVE_DURATION = 1200            # 1ウェーブの長さ（フレーム）約30秒
+WAVE_MAX = 2                   # 最大ウェーブ数
+WAVE_CLEAR_BONUS = 500          # ウェーブクリア時のボーナススコア
+
+# 難易度スケーリング関連
+SPAWN_INTERVAL_DECREASE = 10    # ウェーブごとのスポーン間隔減少量（フレーム）
+ENEMY_SPEED_INCREASE = 0.0      # ウェーブごとの敵の速度増加量
+ENEMY_HP_INCREASE = 1           # 3ウェーブごとの敵のHP増加量
+
+# スポーン確率テーブル（将来の敵タイプ拡張用）
+# フォーマット: {敵タイプ: {ウェーブ番号: 出現確率}}
+ENEMY_SPAWN_CHANCES = {
+    "normal": {  # 通常敵
+        1: 100,   # ウェーブ1: 100%
+        3: 80,    # ウェーブ3: 80%
+        5: 60,    # ウェーブ5: 60%
+        7: 40,    # ウェーブ7: 40%
+        9: 30,    # ウェーブ9: 30%
+    },
+    # 将来の敵タイプ用（実装後にコメントを外す）
+    # "fast": {   # 高速敵
+    #     3: 20,    # ウェーブ3から20%の確率で出現
+    #     5: 30,
+    #     7: 40,
+    #     9: 40,
+    # },
+    # "tank": {   # 高HPの敵
+    #     5: 10,    # ウェーブ5から10%の確率で出現
+    #     7: 20,
+    #     9: 30,
+    # },
+}
+
+# ウェーブ表示関連
+WAVE_NOTIFICATION_DURATION = 60  # ウェーブ開始通知の表示時間（フレーム）
+WAVE_NOTIFICATION_COLOR = 10      # ウェーブ通知の色（10=黄色）
+
+# 入力に追加
+KEY_GUN = pyxel.KEY_G
+
+# 銃関連
+GUN_COOLDOWN = 30      # 銃の発射クールダウン
