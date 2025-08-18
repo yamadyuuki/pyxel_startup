@@ -14,7 +14,7 @@ def rects_intersect(ax, ay, aw, ah, bx, by, bw, bh):
             ay < by + bh and by < ay + ah)
 
 SCREEN_W = 120
-SCREEN_H = 210
+SCREEN_H = 256
 BALL_SPEED = 2
 BALL_SPEED_UP = 0.05
 
@@ -30,7 +30,7 @@ BLOCK_MARGIN_X = 1
 BLOCK_MARGIN_Y = 1
 
 BLOCK_COLS = SCREEN_W // BLOCK_W      # 10列（160/16）
-BLOCK_ROWS = 5                        # 行数は好みで
+BLOCK_ROWS = 10                        # 行数は好みで
 BLOCK_TOP = 12
 
 START_SCENE = 0
@@ -50,7 +50,7 @@ class App:
     def __init__(self):
         pyxel.init(SCREEN_W, SCREEN_H, title="Breakout Game", fps=60)
         pyxel.load("my_resource.pyxres") # リソースの読み込み
-        self.jp_font = pyxel.Font("umplus_j10r.bdf") # 日本語フォントの読み込み
+#        self.jp_font = pyxel.Font("umplus_j10r.bdf") # 日本語フォントの読み込み
         self.init_game()
         pyxel.run(self.update, self.draw)
 
@@ -221,7 +221,7 @@ class App:
     def build_blocks(self):
         blocks = []
         cols = block_cols()
-        for r in range(BLOCK_ROWS):
+        for r in range(BLOCK_ROWS): 
             for c in range(cols):
                 x = BLOCK_MARGIN_X + c * (BLOCK_W + BLOCK_MARGIN_X) 
                 y = BLOCK_TOP + r * (BLOCK_H + BLOCK_MARGIN_Y)
@@ -293,8 +293,6 @@ class Block:
         pyxel.rect(self.x, self.y, self.w, self.h, self.color)
         # ふち線（見やすさ用・任意）
         pyxel.rectb(self.x, self.y, self.w, self.h, pyxel.COLOR_WHITE)
-
-
 
 # ブロックの列数を計算
 def block_cols():
