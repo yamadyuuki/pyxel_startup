@@ -188,7 +188,7 @@ class Battle:
         total_dmg = 0
         for e in self.enemies:
             if e.alive:
-                dmg = max(1, e.atk // 4)  # ちょい弱い固定ダメージ
+                dmg = max(1, e.atk)  # しっかりダメージ
                 total_dmg += dmg
         if total_dmg > 0:
             self.player.hp = clamp(self.player.hp - total_dmg, 0, self.player.hp_max)
@@ -291,7 +291,9 @@ class Battle:
         self._draw_text(SCREEN_W - len(s) * 4 - 6, SCREEN_H - 10, s, COL_ACCENT)
 
 class App:
+    instance = None
     def __init__(self):
+        App.instance = self
         pyxel.init(256, 256, title="Battle", fps=30)
         pyxel.load("my_resource.pyxres") # リソースの読み込み
         self.jp_font = pyxel.Font("umplus_j10r.bdf")
@@ -326,6 +328,7 @@ class App:
         elif self.scene == SCENE_RESULT:
             if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_Z):
                 self.scene = START_SCENE  # タイトルに戻る
+
 
     def draw(self):
         if self.scene == START_SCENE:
