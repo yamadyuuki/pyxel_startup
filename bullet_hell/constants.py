@@ -10,3 +10,9 @@ LEVELS = {
     "NORMAL": {"spawn_interval": 40, "bullet": 5},
     "HARD": {"spawn_interval": 20, "bullet": 8},
 }
+
+COOL_DOWN = 3
+
+ENEMY_HP = 5
+
+TARGET_Y = 40

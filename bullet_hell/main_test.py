@@ -1,7 +1,9 @@
 import pyxel
 from constants import *
 
-
+def rects_intersect(ax, ay, aw, ah, bx, by, bw, bh):
+    return (ax < bx + bw and bx < ax + aw and
+            ay < by + bh and by < ay + ah)
 
 class App:
     def __init__(self):
@@ -106,11 +108,18 @@ class Game:
         
         for i in range(10):
             enemy = Enemy()
-            # 位置を計算: 左端から間隔+敵の幅を考慮
-            enemy.x = spacing + i * (enemy_width + spacing)
-            enemy.y = 20  # 上部に配置
+            # 目標位置を計算: 左端から間隔+敵の幅を考慮
+            target_x = spacing + i * (enemy_width + spacing)
+            target_y = TARGET_Y  # 上部に配置
+            
+            # 敵の初期位置を画面下に設定（少しずつ時間差をつける）
+            enemy.x = target_x
+            enemy.y = SCREEN_HEIGHT + 10 + i * 5  # 少しずつずらす
+            
+            # 目標位置を設定
+            enemy.set_target(target_x, target_y)
             self.enemies.append(enemy)
-
+    
     def update(self):
         self.player.update()
 
@@ -126,53 +135,65 @@ class Game:
 
         self.check_bullet_enemy_collisions()
 
+        #連続衝突判定バージョン
     def check_bullet_enemy_collisions(self):
-        # 各弾について処理
         for bullet in self.player.bullets[:]:
-            # 弾が画面外に出た場合は削除して次へ
             if not bullet.alive:
                 self.player.bullets.remove(bullet)
                 continue
+                
+            # 弾の現在位置を保存
+            original_x = bullet.x
+            original_y = bullet.y
             
-            # デバッグ: 弾の位置
-            # print(f"Bullet position: ({bullet.x}, {bullet.y})")
+            # 目標位置（次のフレームでの位置）
+            # 通常、弾はY軸方向にのみ動くが、将来的に斜めに動く可能性も考慮
+            target_x = original_x  # 現在はX方向に動かないため同じ値
+            target_y = original_y - bullet.speed  # 上に移動するので減算
             
-            # 弾の当たり判定（円）
-            bullet_radius = 1  # 弾の半径
+            # 弾のサイズ
+            bullet_size = 1
             
-            # 衝突した敵があるか
+            # 衝突フラグ
+            collision = False
             hit_enemy = None
             
-            # 各敵について判定
-            for enemy in self.enemies:
-                if not enemy.alive:
-                    continue
-                
-                # 敵の矩形当たり判定
-                enemy_left = enemy.x
-                enemy_right = enemy.x + 8
-                enemy_top = enemy.y
-                enemy_bottom = enemy.y + 8
-                
-                # 円と矩形の衝突判定
-                # 円の中心と矩形の最近接点を計算
-                closest_x = max(enemy_left, min(bullet.x, enemy_right))
-                closest_y = max(enemy_top, min(bullet.y, enemy_bottom))
-                
-                # 円の中心と矩形の最近接点の距離
-                dx = bullet.x - closest_x
-                dy = bullet.y - closest_y
-                distance_squared = dx*dx + dy*dy
-                
-                # 距離が弾の半径以下なら衝突
-                if distance_squared <= bullet_radius * bullet_radius:
-                    hit_enemy = enemy
-                    # デバッグ出力
-                    print(f"Bullet at ({bullet.x}, {bullet.y}) hit enemy at ({enemy.x}, {enemy.y})")
-                    break
+            # 移動距離を分割して処理
+            steps = max(abs(bullet.speed), 1)  # 最低1ステップ
             
-            # 衝突した敵があれば処理
-            if hit_enemy:
+            # 1ステップあたりの移動量
+            step_x = (target_x - original_x) / steps
+            step_y = (target_y - original_y) / steps
+            
+            # 各ステップで衝突判定
+            for step in range(steps + 1):
+                # 現在のステップでの位置
+                test_x = original_x + step * step_x
+                test_y = original_y + step * step_y
+                
+                # 各敵との衝突チェック
+                for enemy in self.enemies:
+                    if not enemy.alive:
+                        continue
+                        
+                    # 矩形同士の衝突判定
+                    if rects_intersect(
+                        test_x - bullet_size, test_y - bullet_size, 
+                        bullet_size * 2, bullet_size * 2,
+                        enemy.x, enemy.y, 8, 8
+                    ):
+                        # 衝突した敵を記録
+                        hit_enemy = enemy
+                        collision = True
+                        #print(f"Bullet at ({test_x}, {test_y}) hit enemy at ({enemy.x}, {enemy.y})")
+                        break
+                        
+                # 衝突したらループを抜ける
+                if collision:
+                    break
+                    
+            # 衝突処理
+            if collision and hit_enemy:
                 # 敵にダメージ
                 hit_enemy.take_damage(1)
                 
@@ -181,41 +202,12 @@ class Game:
                 
                 # 弾を削除
                 self.player.bullets.remove(bullet)
+            else:
+                # 衝突しなかった場合、弾を目標位置まで移動
+                bullet.x = target_x
+                bullet.y = target_y
+                pass
 
-    # 衝突判定のヘルパーメソッド - より明確な実装
-    def line_rect_collision(self, x1, y1, x2, y2, rect_left, rect_top, rect_right, rect_bottom):
-        # 線分の方向ベクトル
-        line_dir_x = x2 - x1
-        line_dir_y = y2 - y1
-        
-        # 線分が点の場合（長さゼロ）
-        if abs(line_dir_x) < 0.0001 and abs(line_dir_y) < 0.0001:
-            # 点が矩形内にあるかチェック
-            return (rect_left <= x1 <= rect_right and 
-                    rect_top <= y1 <= rect_bottom)
-        
-        # パラメトリック方程式のtの範囲を計算
-        t_min = 0.0
-        t_max = 1.0
-        
-        # X軸方向の交差チェック
-        if abs(line_dir_x) > 0.0001:  # ゼロ除算を避ける
-            tx1 = (rect_left - x1) / line_dir_x
-            tx2 = (rect_right - x1) / line_dir_x
-            
-            t_min = max(t_min, min(tx1, tx2))
-            t_max = min(t_max, max(tx1, tx2))
-        
-        # Y軸方向の交差チェック
-        if abs(line_dir_y) > 0.0001:  # ゼロ除算を避ける
-            ty1 = (rect_top - y1) / line_dir_y
-            ty2 = (rect_bottom - y1) / line_dir_y
-            
-            t_min = max(t_min, min(ty1, ty2))
-            t_max = min(t_max, max(ty1, ty2))
-        
-        # 交差判定
-        return t_max >= t_min and t_min <= 1.0 and t_max >= 0.0
                      
     def draw(self):
         pyxel.cls(0)
@@ -290,9 +282,18 @@ class Player:
 class Enemy:
     def __init__(self):
         self.x = SCREEN_WIDTH // 2
-        self.y = 20
+        self.y = SCREEN_HEIGHT + 10
+        self.target_x = SCREEN_WIDTH // 2
+        self.target_y = 20
+        self.move_speed = 1
+        self.is_moving = True
         self.hp = ENEMY_HP
         self.alive = True
+
+    def set_target(self, x, y):
+        self.target_x = x
+        self.target_y = y
+        self.is_moving = True
 
     def take_damage(self, amount):
         self.hp -= amount
@@ -300,7 +301,22 @@ class Enemy:
             self.alive = False
     
     def update(self):
-        pass
+        #目標位置に向かって移動
+        if self.is_moving:
+            dx = self.target_x -self.x
+            dy = self.target_y -self.y
+
+            if abs(dx) < self.move_speed and abs(dy) < self.move_speed:
+                self.x = self.target_x
+                self.y = self.target_y
+                self.is_moving = False
+            else:
+                #方向ベクトルを正規化して移動
+                distance = (dx**2 + dy**2)**0.5
+                self.x += (dx / distance)  * self.move_speed
+                self.y += (dy / distance)  * self.move_speed
+
+        
     def draw(self):
         if self.alive:
             pyxel.blt(int(self.x), int(self.y), 0, 0, 8, 8, 8, 0)
@@ -317,8 +333,6 @@ class Player_Bullet:
         self.alive = True
 
     def update(self):
-        self.y -= self.speed
-
         if self.y < -2:
             self.alive = False
 
