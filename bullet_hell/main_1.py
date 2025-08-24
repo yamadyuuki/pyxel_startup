@@ -107,7 +107,9 @@ class Game:
         spacing = (SCREEN_WIDTH - total_width) / 11  # 均等な間隔
         
         for i in range(10):
-            enemy = Enemy()
+            # レベル設定を渡して敵を生成
+            enemy = Enemy(bullet_speed=self.level.get("ENEMY_BULLET_SPEED", 0.2))
+            
             # 目標位置を計算: 左端から間隔+敵の幅を考慮
             target_x = spacing + i * (enemy_width + spacing)
             target_y = TARGET_Y  # 上部に配置
@@ -133,7 +135,72 @@ class Game:
         if len(self.enemies) == 0:
             self.spawn_initial_enemies()
 
+        # プレイヤーの弾と敵の当たり判定
         self.check_bullet_enemy_collisions()
+        
+        # 敵の弾とプレイヤーの当たり判定（新規追加）
+        self.check_enemy_bullet_player_collisions()
+
+    # 新しい当たり判定メソッド
+    def check_enemy_bullet_player_collisions(self):
+        # プレイヤーの当たり判定サイズ
+        player_size = 7  # 8x8スプライトに対して少し小さめの当たり判定
+        
+        # 各敵の弾とプレイヤーの当たり判定
+        for enemy in self.enemies:
+            for bullet in enemy.bullets[:]:
+                if not bullet.alive:
+                    continue
+                    
+                # 弾の現在位置を保存
+                original_x = bullet.x
+                original_y = bullet.y
+                
+                # 目標位置（次のフレームでの位置）
+                target_x = original_x
+                target_y = original_y + bullet.speed
+                
+                # 弾のサイズ
+                bullet_size = 1
+                
+                # 衝突フラグ
+                collision = False
+                
+                # 移動距離を分割して処理
+                steps = max(abs(bullet.speed), 1)
+                
+                # 1ステップあたりの移動量
+                step_x = (target_x - original_x) / steps
+                step_y = (target_y - original_y) / steps
+                
+                # 各ステップで衝突判定
+                for step in range(steps + 1):
+                    # 現在のステップでの位置
+                    test_x = original_x + step * step_x
+                    test_y = original_y + step * step_y
+                    
+                    # プレイヤーとの衝突チェック
+                    if rects_intersect(
+                        test_x - bullet_size, test_y - bullet_size, 
+                        bullet_size * 2, bullet_size * 2,
+                        self.player.x + 0.5, self.player.y + 0.5, 
+                        player_size, player_size
+                    ):
+                        collision = True
+                        break
+                
+                # 衝突処理
+                if collision:
+                    # プレイヤーにダメージ
+                    self.player.take_damage(1)
+                    
+                    # 弾を削除
+                    enemy.bullets.remove(bullet)
+                else:
+                    # 衝突しなかった場合、弾を目標位置まで移動
+                    bullet.x = target_x
+                    bullet.y = target_y
+
 
         #連続衝突判定バージョン
     def check_bullet_enemy_collisions(self):
@@ -214,8 +281,16 @@ class Game:
         
         # スコアとレベル表示
         pyxel.text(10, 10, f"SCORE: {self.score}", 7)
-        pyxel.text(10, 20, f"LEVEL: {self.level['bullet']}", 7)
+        pyxel.text(10, 20, f"LEVEL: {self.level['ENEMY_BULLET_SPEED']}", 7)
+
+        # プレイヤーのHP表示を追加
+        pyxel.text(10, 30, f"HP: {self.player.hp}", 11)
         
+        # HPバーの表示（オプション）
+        bar_width = (self.player.hp / PLAYER_HP) * 50  # 最大HPが10の場合
+        pyxel.rect(40, 30, int(bar_width), 4, 11)
+        pyxel.rectb(40, 30, 50, 4, 7)
+
         # プレイヤーを描画
         self.player.draw()
         
@@ -242,6 +317,23 @@ class Player:
         self.speed = 1  # 少し上げてもOK
         self.bullets = []
         self.cooldown = 0  # Cooldownの初期値
+        self.hp = PLAYER_HP
+        self.invincible_timer = 0
+        self.hit_effect = 0
+
+    def take_damage(self, amount):
+        self.hp -= amount
+        if self.hp <= 0:
+            self.alive = 0
+
+        # ヒット時の効果音
+        pyxel.play(1, 1)
+        
+        # ヒットエフェクト用（オプション）
+        self.hit_effect = 20
+        
+        # 無敵時間を設定（オプション）
+        self.invincible_timer = 0  # いったん0秒（0fps）
 
     def update(self):
         dx = (1 if pyxel.btn(pyxel.KEY_RIGHT) else 0) - (1 if pyxel.btn(pyxel.KEY_LEFT) else 0)
@@ -271,16 +363,33 @@ class Player:
             if not bullet.alive:
                 self.bullets.remove(bullet)
 
+        # 無敵時間の更新（オプション）
+        if self.invincible_timer > 0:
+            self.invincible_timer -= 1
+            
+        # ヒットエフェクトの更新（オプション）
+        if self.hit_effect > 0:
+            self.hit_effect -= 1
+
     def draw(self):
-        # プレイヤーを描画
-        pyxel.blt(int(self.x), int(self.y), 0, 8, 0, 8, 8, 0)
+       # 無敵時間中は点滅表示（オプション）
+        if self.invincible_timer > 0 and self.invincible_timer % 4 < 2:
+            # 点滅中は描画しない
+            pass
+        else:
+            # 通常描画
+            pyxel.blt(int(self.x), int(self.y), 0, 8, 0, 8, 8, 0)
+            
+        # ヒットエフェクト（オプション）
+        if self.hit_effect > 0:
+            pyxel.circb(int(self.x) + 4, int(self.y) + 4, self.hit_effect // 2, 8)
         
         # 弾を描画
         for bullet in self.bullets:
             bullet.draw()
 
 class Enemy:
-    def __init__(self):
+    def __init__(self, bullet_speed=0.2):
         self.x = SCREEN_WIDTH // 2
         self.y = SCREEN_HEIGHT + 10
         self.target_x = SCREEN_WIDTH // 2
@@ -289,6 +398,9 @@ class Enemy:
         self.is_moving = True
         self.hp = ENEMY_HP
         self.alive = True
+        self.bullets = []
+        self.shoot_timer = 0
+        self.bullet_speed = bullet_speed  # 弾の速度を設定        
 
     def set_target(self, x, y):
         self.target_x = x
@@ -315,8 +427,23 @@ class Enemy:
                 distance = (dx**2 + dy**2)**0.5
                 self.x += (dx / distance)  * self.move_speed
                 self.y += (dy / distance)  * self.move_speed
-
         
+        self.shoot_timer += 1
+
+        if self.shoot_timer >= SHOOT_INTERVAL:
+            self.shoot()
+            self.shoot_timer = 0
+
+        # 弾の更新
+        for bullet in self.bullets[:]:
+            bullet.update()
+            if not bullet.alive:
+                self.bullets.remove(bullet)
+    
+    def shoot(self):
+        new_bullet = Enemy_Bullet(self.x, self.y + 8, self.bullet_speed)
+        self.bullets.append(new_bullet)
+
     def draw(self):
         if self.alive:
             pyxel.blt(int(self.x), int(self.y), 0, 0, 8, 8, 8, 0)
@@ -324,6 +451,9 @@ class Enemy:
             #HPバーの表示
             bar_width = (self.hp / ENEMY_HP) * 8
             pyxel.rect(int(self.x), int(self.y) - 2, int(bar_width), 1, 8)
+
+            for bullet in self.bullets:
+                bullet.draw()
 
 class Player_Bullet:
     def __init__(self, x, y):
@@ -339,6 +469,20 @@ class Player_Bullet:
     def draw(self):
         pyxel.circ(self.x, self.y, 1, 8) # Draw a small red circle for the bullet
 
+class Enemy_Bullet:
+    def __init__(self, x, y, speed=0.2):
+        self.x = x + 4
+        self.y = y
+        self.speed = speed
+        self.alive = True
+
+    def update(self):
+        self.y += self.speed
+        if self.y > SCREEN_HEIGHT + 2:
+            self.alive = False
+
+    def draw(self):
+        pyxel.circ(self.x, self.y, 1, 10)
 
 
 App()

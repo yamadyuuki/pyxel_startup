@@ -6,9 +6,9 @@ SCREEN_HEIGHT = 248
 SCREEN_WIDTH = 248
 
 LEVELS = {
-    "EASY": {"spawn_interval": 60, "bullet": 3},
-    "NORMAL": {"spawn_interval": 40, "bullet": 5},
-    "HARD": {"spawn_interval": 20, "bullet": 8},
+    "EASY": {"spawn_interval": 60, "ENEMY_BULLET_SPEED": 0.2},
+    "NORMAL": {"spawn_interval": 40, "ENEMY_BULLET_SPEED": 0.4},
+    "HARD": {"spawn_interval": 20, "ENEMY_BULLET_SPEED": 0.6},
 }
 
 COOL_DOWN = 3
@@ -16,3 +16,10 @@ COOL_DOWN = 3
 ENEMY_HP = 5
 
 TARGET_Y = 40
+
+PLAYER_HP = 100
+
+SHOOT_INTERVAL = 120
+ENEMY_BULLET_SPEED = 0.2
+
+PLAYER_BULLET_SPEED = 1
