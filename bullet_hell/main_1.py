@@ -1,3 +1,4 @@
+import math
 import pyxel
 from constants import *
 
@@ -23,10 +24,16 @@ class App:
         if pyxel.btnp(pyxel.KEY_ESCAPE):
             pyxel.quit()
 
+        if pyxel.btnp(pyxel.KEY_R):
+            if self.scene == PLAY_SCENE:
+                self.scene = START_SCENE
+                pyxel.play(0, 0)
+
         if self.scene == START_SCENE:
             self.update_start_scene()
         elif self.scene == PLAY_SCENE and self.game:      # ← 追加
             self.game.update()                            # ← 追加
+
 
     def draw(self):
         if self.scene == START_SCENE:
@@ -155,10 +162,9 @@ class Game:
                 # 弾の現在位置を保存
                 original_x = bullet.x
                 original_y = bullet.y
+
+                target_x, target_y = bullet.next_pos()   # ← BulletBaseに用意
                 
-                # 目標位置（次のフレームでの位置）
-                target_x = original_x
-                target_y = original_y + bullet.speed
                 
                 # 弾のサイズ
                 bullet_size = 1
@@ -166,8 +172,9 @@ class Game:
                 # 衝突フラグ
                 collision = False
                 
-                # 移動距離を分割して処理
-                steps = max(abs(bullet.speed), 1)
+                # steps（分割数）は移動量からざっくり決める
+                move_len = abs(bullet.vx) + abs(bullet.vy)
+                steps = max(int(move_len), 1)
                 
                 # 1ステップあたりの移動量
                 step_x = (target_x - original_x) / steps
@@ -293,7 +300,10 @@ class Game:
 
         # プレイヤーを描画
         self.player.draw()
-        
+
+        # リセット方法の案内表示
+        pyxel.text(SCREEN_WIDTH - 115, 10, "R: BACK TO MENU", 8)        
+
         # すべての敵を描画
         for enemy in self.enemies:
             enemy.draw()
@@ -379,7 +389,15 @@ class Player:
         else:
             # 通常描画
             pyxel.blt(int(self.x), int(self.y), 0, 8, 0, 8, 8, 0)
-            
+
+        # # プレイヤーのHP表示を追加
+        # pyxel.text(10, 30, f"HP: {self.player.hp}", 11)
+        
+        # # HPバーの表示（オプション）
+        # bar_width = (self.player.hp / PLAYER_HP) * 50  # 最大HPが10の場合
+        # pyxel.rect(40, 30, int(bar_width), 4, 11)
+        # pyxel.rectb(40, 30, 50, 4, 7)
+
         # ヒットエフェクト（オプション）
         if self.hit_effect > 0:
             pyxel.circb(int(self.x) + 4, int(self.y) + 4, self.hit_effect // 2, 8)
@@ -401,6 +419,16 @@ class Enemy:
         self.bullets = []
         self.shoot_timer = 0
         self.bullet_speed = bullet_speed  # 弾の速度を設定        
+
+        self.pattern = CircularBurstPattern(
+            count=24,               # 一度に24方向
+            speed=bullet_speed,   # 速さ（好みで）
+            start_deg=90,           # 画面座標系で“下”が+Yなので90°が下向き
+            spread_deg=360,         # 全周
+            spin_deg=6,             # 発射のたびに6°回転 → 渦巻き弾幕になる
+            radius=1,
+            color=10
+        )
 
     def set_target(self, x, y):
         self.target_x = x
@@ -441,8 +469,8 @@ class Enemy:
                 self.bullets.remove(bullet)
     
     def shoot(self):
-        new_bullet = Enemy_Bullet(self.x, self.y + 8, self.bullet_speed)
-        self.bullets.append(new_bullet)
+        # これまで1発だけ落とす → 円状に複数発
+        self.bullets += self.pattern.fire(self.x + 4, self.y + 8)
 
     def draw(self):
         if self.alive:
@@ -483,6 +511,76 @@ class Enemy_Bullet:
 
     def draw(self):
         pyxel.circ(self.x, self.y, 1, 10)
+
+class BulletBase:
+    def __init__(self, x, y, vx, vy, speed=1.0, radius=1, color=10):
+        self.x = x
+        self.y = y
+        # 速度ベクトル（1フレーム当たりの移動量）
+        self.vx = vx * speed
+        self.vy = vy * speed
+        self.radius = radius
+        self.color = color
+        self.alive = True
+
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+        # 画面外で消す（少しマージン）
+        if (self.x < -4 or self.x > SCREEN_WIDTH + 4 or
+            self.y < -4 or self.y > SCREEN_HEIGHT + 4):
+            self.alive = False
+
+    def draw(self):
+        pyxel.circ(self.x, self.y, self.radius, self.color)
+
+    # 次フレーム位置（当たり判定の“連続判定”で使いやすい）
+    def next_pos(self):
+        return (self.x + self.vx, self.y + self.vy)
+
+
+# 2) 弾パターンの基底：将来、他パターンも追加しやすい形
+class BulletPattern:
+    def fire(self, x, y):
+        """(x,y)から弾リストを生成して返す。"""
+        raise NotImplementedError
+
+
+# 3) 円状一斉発射（BulletML風の基本）
+class CircularBurstPattern(BulletPattern):
+    def __init__(self, count=16, speed=1.2, start_deg=90, spread_deg=360, spin_deg=0,
+                 radius=1, color=10):
+        """
+        count      : 一度に出す弾の数
+        speed      : 弾速（ピクセル/フレーム）
+        start_deg  : 発射の開始角度（右=0°, 下=90°, 左=180°, 上=270°想定）
+        spread_deg : 何度の扇形に分配するか（360で全周）
+        spin_deg   : 呼ぶたびにstart_degへ加算する角度（回転弾幕）
+        """
+        self.count = count
+        self.speed = speed
+        self.start_deg = start_deg
+        self.spread_deg = spread_deg
+        self.spin_deg = spin_deg
+        self.radius = radius
+        self.color = color
+
+    def fire(self, x, y):
+        bullets = []
+        if self.count <= 0:
+            return bullets
+        step = self.spread_deg / self.count  # 1発ごとの角度差
+        for i in range(self.count):
+            ang_deg = self.start_deg + i * step
+            ang = math.radians(ang_deg)
+            vx, vy = math.cos(ang), math.sin(ang)
+            bullets.append(
+                BulletBase(x, y, vx, vy, speed=self.speed,
+                           radius=self.radius, color=self.color)
+            )
+        # 次回の発射時に回転させたい場合
+        self.start_deg = (self.start_deg + self.spin_deg) % 360
+        return bullets
 
 
 App()
