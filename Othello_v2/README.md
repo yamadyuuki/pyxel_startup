@@ -2,6 +2,9 @@
 
 これは、レトロゲームエンジン[Pyxel](https://github.com/kitao/pyxel)を使用して作成されたオセロ（リバーシ）ゲームです。
 
+# 下のURLでできます
+https://kitao.github.io/pyxel/wasm/launcher/?run=yamadyuuki.pyxel_startup.Othello_v2.main
+
 ## 特徴
 
 - シンプルで直感的なユーザーインターフェース。
