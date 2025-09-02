@@ -1,6 +1,7 @@
 # Pyxel Othello（オセロ）
 
 シンプルなオセロ（リバーシ）ゲーム。`Pyxel` を使った2D描画で、マウス操作の人間プレイヤー対CPUの対戦ができます。難易度（思考エンジン）は3段階を用意しています。
+https://kitao.github.io/pyxel/wasm/launcher/?run=yamadyuuki.pyxel_startup.Othello_v4.main
 
 ## 特長
 - **Pyxel製UI**: 盤面表示・石描画・着手候補ハイライトを実装。

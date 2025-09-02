@@ -123,7 +123,7 @@ class App:
 
     def draw_start_screen(self):
         """スタート画面の描画処理"""
-        pyxel.cls(0)
+        pyxel.cls(1)
         pyxel.text(70, 50, "PYXEL OTHELLO", pyxel.frame_count % 16)
         pyxel.text(65, 80, "SELECT DIFFICULTY", 7)
         
