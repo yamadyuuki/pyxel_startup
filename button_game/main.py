@@ -11,6 +11,7 @@ class App:
     def __init__(self):
         pyxel.init(WIDTH, HEIGHT, title="Arrow Rhythm (Prototype)", fps=FPS)
         self.scene = StartScene(on_start=self.start_game)
+        pyxel.load("my_resource.pyxres")
         pyxel.run(self.update, self.draw)
 
     # スタート画面から難易度を受け取ってゲーム開始

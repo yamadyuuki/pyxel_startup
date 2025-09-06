@@ -61,13 +61,16 @@ class StartScene:
         # 難易度選択：左右/上下で移動
         if pyxel.btnp(pyxel.KEY_LEFT) or pyxel.btnp(pyxel.KEY_UP):
             self.index = (self.index - 1) % len(self.options)
+            pyxel.play(0,0)
         if pyxel.btnp(pyxel.KEY_RIGHT) or pyxel.btnp(pyxel.KEY_DOWN):
             self.index = (self.index + 1) % len(self.options)
+            pyxel.play(0,0)
 
         # SPACEで開始
         if pyxel.btnp(pyxel.KEY_SPACE):
             difficulty = self.options[self.index]
             self.on_start(difficulty)
+            pyxel.play(0,1)
 
     def draw(self):
         draw_center_text(22, "ARROW RHYTHM", 11)
@@ -100,12 +103,12 @@ class PlayScene:
         self.set_index = 0  # 0..4
         self.round_index = 0  # 0..rounds_per_set-1
         self.in_break = True   # セット間休憩中か
-        self.break_start_frame = pyxel.frame_count
+        self.break_start_frame = pyxel.frame_count # 休憩開始フレーム
 
         # 現在の矢印
         self.current_arrow = None           # type: str | None
         self.spawn_frame = 0                # この矢印が出たフレーム
-        self.waiting_input = False
+        self.waiting_input = False          # 入力待ち中か
 
         # 成績
         self.score = 0
@@ -123,7 +126,7 @@ class PlayScene:
     # 次のラウンドへ進む（正否に関係なく移行）
     def _advance_round(self):
         self.round_index += 1
-        self.waiting_input = False
+        self.waiting_input = False 
         self.current_arrow = None
 
         if self.round_index >= self.rounds_per_set:
@@ -161,6 +164,7 @@ class PlayScene:
             for name, key in KEY_MAP.items():
                 if pyxel.btnp(key):
                     pressed = name
+                    pyxel.play(0,0)
                     break
 
             if pressed is not None:
@@ -175,6 +179,10 @@ class PlayScene:
             # 結果画面中：SPACEでタイトルへ
             if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_RETURN):
                 self.on_finish()
+            return
+        # プレイ中：Rで途中終了
+        if pyxel.btnp(pyxel.KEY_R):
+            self.on_finish()
             return
 
         if self.in_break:
