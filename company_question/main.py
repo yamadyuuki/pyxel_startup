@@ -77,12 +77,12 @@ class App:
             if pyxel.btnp(pyxel.KEY_4) and n >= 4: self.sel = 3
 
             # 決定
-            if pyxel.btnp(pyxel.KEY_RETURN):
-                self.is_correct = (self.sel == self.correct_idx)
+            if pyxel.btnp(pyxel.KEY_SPACE):
+                # 選んだ選択肢の文字列と name が一致するかで判定
+                self.is_correct = (self.q.choices[self.sel].strip() == self.q.name.strip())
                 if self.is_correct:
                     self.score += 1
                 self.state = STATE_RESULT
-
         elif self.state == STATE_RESULT:
             if pyxel.btnp(pyxel.KEY_SPACE):
                 self.state = STATE_BLURB
@@ -91,7 +91,7 @@ class App:
                 self.state = STATE_TITLE
 
         elif self.state == STATE_BLURB:
-            if pyxel.btnp(pyxel.KEY_ESCAPE):
+            if pyxel.btnp(pyxel.KEY_SPACE):
                 self.reset_game()
                 self.state = STATE_TITLE
 
@@ -242,6 +242,6 @@ class App:
         if line: lines.append(line)
         for i, ln in enumerate(lines[: (mh//8)-3 ]):
             pyxel.text(mx+6, my+6+i*8, ln, 7)
-        pyxel.text(mx+6, my+mh-12, "Press ESC to close", 6)
+        pyxel.text(mx+6, my+mh-12, "Press SPACE to close", 6)
 
 App()

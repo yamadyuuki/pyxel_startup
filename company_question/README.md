@@ -2,6 +2,12 @@
 
 Pyxel で動作する株価クイズゲームです。ローソクではないシンプルな折れ線チャートが徐々に伸びていき、任意のタイミングで止めて銘柄名を4択で当てます。`main.py` と `tools/` のスクリプトで、独自のクイズパック（問題データ）も作成できます。
 
+
+uv run python tools/fetch_stock.py --tickers 7832 3659 9766 9697 9602 9684 4816 7974 3635
+uv run python tools/build_name_map.py --from-csv-dir data/raw --out tools/name_map.csv
+uv run python tools/build_pack.py --csv-dir data/raw  --out packs/pack_sample.py
+
+
 ## 特長 / 画面操作
 
 - タイトル: 矢印キーで問題を選択、`Enter` または `Space` で開始
