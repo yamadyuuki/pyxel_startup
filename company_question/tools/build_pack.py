@@ -63,9 +63,12 @@ def parse_csv(path: str, step: int, scale: int, name_fallback: str) -> Series:
     # infer ticker from filename: replace '_' back to '.'
     # e.g. data/raw/5032_T_2022-08-28_to_2025-09-06.csv -> 5032.T
     base = os.path.basename(path)
-    ticker_guess = base.split("_")[0] + "." + base.split("_")[1]  # "5032.T"
-    ticker_guess = ticker_guess.replace("..", ".")
-    ticker = ticker_guess
+    parts = base.split("_")
+    if len(parts) >= 2:
+        ticker = f"{parts[0]}.{parts[1]}".replace("..", ".")
+    else:
+        # フォールバック：拡張子を除いたファイル名などを使う等、適宜対処
+        ticker = os.path.splitext(base)[0]
 
     dates: List[str] = []
     closes: List[float] = []

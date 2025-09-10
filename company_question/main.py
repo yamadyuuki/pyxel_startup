@@ -3,7 +3,7 @@ import pyxel
 from core.models import Question
 from packs import pack_sample
 from datetime import datetime, timedelta  # ← 追加
-
+from typing import List, Tuple
 
 QUESTIONS = pack_sample.QUESTIONS
 
@@ -14,6 +14,58 @@ STATE_PLAYING = 1
 STATE_CHOICE  = 2
 STATE_RESULT  = 3
 STATE_BLURB   = 4
+
+def _parse_date(s: str):
+    return datetime.fromisoformat(s).date()
+
+def _linear_resample(arr: List[int], new_len: int) -> List[int]:
+    """整数の配列を new_len に線形リサンプリング（小数点四捨五入）。"""
+    n = len(arr)
+    if n == new_len:
+        return list(arr)
+    if new_len <= 1:
+        return [int(round(float(arr[-1])))]
+    out = []
+    for j in range(new_len):
+        # 0..1 の正規化位置
+        t = j / (new_len - 1)
+        # 旧配列の連続インデックス
+        x = t * (n - 1)
+        i0 = int(x)
+        i1 = min(i0 + 1, n - 1)
+        a = arr[i0]
+        b = arr[i1]
+        w = x - i0
+        v = a * (1 - w) + b * w
+        out.append(int(round(v)))
+    return out
+
+def _slice_by_span_ratio(base_prices: List[int], base_span: Tuple[str, str],
+                         target_span: Tuple[str, str]) -> List[int]:
+    """
+    base_span 全体の中で target_span が占める相対位置に相当する区間を
+    base_prices から切り出す（営業日を厳密には見ない近似）。
+    """
+    b0, b1 = map(_parse_date, base_span)
+    t0, t1 = map(_parse_date, target_span)
+    total_days = (b1 - b0).days
+    if total_days <= 1:
+        return list(base_prices)
+    start_ratio = max(0.0, min(1.0, (t0 - b0).days / total_days))
+    end_ratio   = max(0.0, min(1.0, (t1 - b0).days / total_days))
+    if end_ratio < start_ratio:
+        start_ratio, end_ratio = end_ratio, start_ratio
+    n = len(base_prices)
+    s_idx = int(round(start_ratio * (n - 1)))
+    e_idx = max(s_idx + 1, int(round(end_ratio * (n - 1))))  # 最低2点
+    return base_prices[s_idx:e_idx + 1]
+
+# === 追加: Nikkei 225 の Question を一度だけ特定 ===
+INDEX_Q = None
+for _q in pack_sample.QUESTIONS:
+    if str(getattr(_q, "ticker", "")).startswith("^N225"):
+        INDEX_Q = _q
+        break
 
 class App:
     def __init__(self):
@@ -105,6 +157,17 @@ class App:
         self.stopped = False
         self.sel = 0
         self.correct_idx = 0
+
+        # === 追加: Nikkei 225 オーバーレイ用配列を用意 ===
+        self.idx_prices = None
+        if INDEX_Q is not None and getattr(self.q, "span", None):
+            # 期間で切り出し → データ長にリサンプリング
+            idx_slice = _slice_by_span_ratio(INDEX_Q.prices, INDEX_Q.span, self.q.span)
+            self.idx_prices = _linear_resample(idx_slice, len(self.q.prices))
+            self.index_label = "Nikkei 225"
+        else:
+            self.index_label = None
+
         self.state = STATE_PLAYING
 
     # ---------------- draw ----------------
@@ -162,54 +225,67 @@ class App:
         x0,y0,x1,y1 = 20, 20, W-10, H-50
         pyxel.rectb(x0, y0, x1-x0, y1-y0, 7)
 
-        # スケール
-        data = self.q.prices[:self.t+1]
-        if not data: return
-        mi, ma = min(data), max(data)
-        mi = mi if mi != ma else mi-1
-        def map_y(v):
+        # --- データ準備 ---
+        data_main = self.q.prices[: self.t + 1]
+        if not data_main:
+            return
+        data_idx = []
+        if getattr(self, "idx_prices", None):
+            data_idx = self.idx_prices[: self.t + 1]
+
+        # --- 共通スケール（銘柄＋指数の全体で min/max を取る） ---
+        data_all = data_main + (data_idx or [])
+        mi, ma = min(data_all), max(data_all)
+        if mi == ma:
+            mi -= 1  # 0除算回避
+
+        def map_y(v: int) -> int:
             r = (v - mi) / (ma - mi)
             return int(y1 - r * (y1 - y0))
 
-        # 線
+        # --- 銘柄線（色: 11）---
         last = None
-        for i, v in enumerate(data):
-            x = x0 + int(i * (x1-x0) / max(1, len(self.q.prices)-1))
+        for i, v in enumerate(data_main):
+            x = x0 + int(i * (x1 - x0) / max(1, len(self.q.prices) - 1))
             y = map_y(v)
             if last is not None:
                 pyxel.line(last[0], last[1], x, y, 11)
             last = (x, y)
 
+        # --- 指数線（色: 5）---
+        if data_idx:
+            last = None
+            for i, v in enumerate(data_idx):
+                x = x0 + int(i * (x1 - x0) / max(1, len(self.idx_prices) - 1))
+                y = map_y(v)
+                if last is not None:
+                    pyxel.line(last[0], last[1], x, y, 10)
+                last = (x, y)
+            # 凡例（右上）
+            pyxel.text(x1 - 100, y0 + 2, (self.q.name or "")[:12], 11)
+            pyxel.text(x1 - 100, y0 + 10, (self.index_label or "Index")[:12], 10)
+
         # 停止ライン
-        if self.state == STATE_CHOICE:
+        if self.state == STATE_CHOICE and data_main:
             pyxel.line(last[0], y0, last[0], y1, 8)
 
-        # === 縦軸メモリ（株価） ===
-        steps = 4  # メモリ数
+        # === 縦軸メモリ ===
+        steps = 4
         for i in range(steps+1):
             val = mi + (ma - mi) * i / steps
             y = map_y(val)
-            pyxel.line(x0-3, y, x0, y, 7)  # メモリ線
-            pyxel.text(2, y-2, str(int(val)), 7)  # 数値ラベル
+            pyxel.line(x0-3, y, x0, y, 7)
+            pyxel.text(2, y-2, str(int(val)), 7)
 
-        # === 横軸メモリ（インデックス: 日付代わり） ===
+        # === 横軸メモリ（日付ラベル） ===
         x_steps = 5
         n = len(self.q.prices)
         for i in range(x_steps + 1):
-            # 0.0～1.0 の位置（等間隔）
             frac = i / x_steps
-
-            # データ点に合わせたX座標（等間隔な点群なので idx 由来でも見た目は綺麗）
-            idx = int((n - 1) * frac)                         # 0..n-1 に収まる
-            x = x0 + int((idx / max(1, n - 1)) * (x1 - x0))  # 画面Xへ線形変換
-
-            # 目盛り線
+            idx = int((n - 1) * frac)
+            x = x0 + int((idx / max(1, n - 1)) * (x1 - x0))
             pyxel.line(x, y1, x, y1 + 3, 7)
-
-            # ラベル文字列：月表示（"YYYY-MM"）。日まで出したければ monthly=False にする
             label = self._interp_date_label(self.q.span, frac, monthly=True)
-
-            # 簡易センタリング（テキスト幅をざっくりlen*4pxと仮定）
             pyxel.text(x - (len(label) * 5) // 2, y1 + 6, label, 7)
 
     def _interp_date_label(self, span, frac: float, monthly: bool = True) -> str:
