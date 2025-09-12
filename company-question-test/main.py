@@ -262,7 +262,7 @@ class App:
                     pyxel.line(last[0], last[1], x, y, 10)
                 last = (x, y)
             # 凡例（右上）
-            pyxel.text(x1 - 100, y0 + 2, (self.q.name or "")[:12], 11)
+            pyxel.text(x1 - 100, y0 + 2, ("target company")[:12], 11)
             pyxel.text(x1 - 100, y0 + 10, (self.index_label or "Index")[:12], 10)
 
         # 停止ライン
